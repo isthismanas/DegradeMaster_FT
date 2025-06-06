@@ -52,5 +52,12 @@ python case_study.py
 
 ### Reference
 ```
-Liu, J., Roy, M., Isbel, L. and Li, F., 2025. Accurate PROTAC targeted degradation prediction with DegradeMaster. bioRxiv, pp.2025-02.
+@article{liu2025accurate,
+  title={Accurate PROTAC targeted degradation prediction with DegradeMaster},
+  author={Liu, Jie and Roy, Michael and Isbel, Luke and Li, Fuyi},
+  journal={bioRxiv},
+  pages={2025--02},
+  year={2025},
+  publisher={Cold Spring Harbor Laboratory}
+}
 ```
