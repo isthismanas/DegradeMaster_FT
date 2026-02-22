@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # DegradeMaster
 Source Code of ISMB/ECCB'25 submitted paper "Accurate PROTAC targeted degradation prediction with DegradeMaster".
 
@@ -61,3 +62,7 @@ python case_study.py
   publisher={Cold Spring Harbor Laboratory}
 }
 ```
+=======
+# DegradeMaster_FT
+Finetuning the original DegradeMaster by Dr. Jie Liu and Dr. Fuyi Li
+>>>>>>> origin/main
