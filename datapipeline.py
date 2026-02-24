@@ -36,3 +36,7 @@ class DataPipeline:
                 zip_ref.extractall(directory)
 
             return directory
+
+if __name__ == "__main__":
+    zip_path = DataPipeline.download_dataset("PROTAC-8K", "zip_data")
+    DataPipeline.extract_dataset(zip_path, "data/PROTAC") 
