@@ -1,2 +1,14 @@
 .idea/ 
 .DS_Store/ 
+DegradeV2/
+agent.md
+DEGRADEMASTER_FT_DETAILED_GUIDE.md
+DEGRADEMASTER_FT_LINE_BY_LINE_APPENDIX.md
+AGENTS.md
+data/PROTAC/
+utils/
+tokenizer/
+data/_downloads/
+__pycache__/
+config/__pycache__/
+DEGRADEMASTER_FT_WORKING_GUIDE_COMPACT.md
