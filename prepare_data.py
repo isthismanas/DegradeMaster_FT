@@ -18,7 +18,10 @@ from config.config import get_args
 from openbabel import pybel
 
 from rdkit.Chem import AllChem, Draw
-from pymol import cmd
+try:
+    from pymol import cmd
+except Exception:
+    cmd = None
 import numpy as np
 import subprocess
 
@@ -320,9 +323,10 @@ def get_edges(B, batch_id, segment_ids, Z, block_id, k_neighbors, global_message
 def pdb_to_mol2(pdb_path):
 
     mol2path = os.path.splitext(pdb_path)[0] + ".mol2"
-    cmd.load(pdb_path, format='pdb')
-    cmd.save(mol2path, format='mol2')
-    cmd.delete('all')
+
+    # Prefer OpenBabel conversion so runtime does not depend on PyMOL binary plugins.
+    mol = next(pybel.readfile("pdb", pdb_path))
+    mol.write("mol2", mol2path, overwrite=True)
 
     return mol2path
 
@@ -369,38 +373,45 @@ class GraphData(InMemoryDataset):
             e3_lig_path = os.path.join(self.root, 'ligase_ligand', name_dic[key]['e3_lig_path'])
 
             if isinstance(self.select_pocket_war, int):
-                tar_name = basename(splitext(tar_path)[0])
-                war_name = basename(splitext(war_path)[0])
-                selection_name = '%s_pocket_%d' % (tar_name, self.select_pocket_war)
-                tar_path_s = './data/PROTAC/selected_target/' + selection_name + '.mol2'
-                if not isfile(tar_path_s):
-                    print("Selecting residues within %d of warhead" % self.select_pocket_war)
-                    cmd.load(tar_path, format='pdb')
-                    cmd.load(war_path, format='mol2')
-                    cmd.select(selection_name,
-                               selection='(not %s) & br. all within %d of %s'
-                                         % (war_name, self.select_pocket_war, war_name))
-                    cmd.save(tar_path_s, selection_name)
-                    cmd.delete('all')
-                tar_path = tar_path_s
+                if cmd is not None:
+                    tar_name = basename(splitext(tar_path)[0])
+                    war_name = basename(splitext(war_path)[0])
+                    selection_name = '%s_pocket_%d' % (tar_name, self.select_pocket_war)
+                    tar_path_s = './data/PROTAC/selected_target/' + selection_name + '.mol2'
+                    if not isfile(tar_path_s):
+                        print("Selecting residues within %d of warhead" % self.select_pocket_war)
+                        cmd.load(tar_path, format='pdb')
+                        cmd.load(war_path, format='mol2')
+                        cmd.select(selection_name,
+                                   selection='(not %s) & br. all within %d of %s'
+                                             % (war_name, self.select_pocket_war, war_name))
+                        cmd.save(tar_path_s, selection_name)
+                        cmd.delete('all')
+                    tar_path = tar_path_s
+                else:
+                    # Fallback: convert full target pocket pdb to mol2 when PyMOL is unavailable.
+                    tar_path = pdb_to_mol2(tar_path)
                 tar_path_d[key] = tar_path
-                # cmd.quit()
             if isinstance(self.select_pocket_e3, int):
-                e3_name = basename(splitext(e3_ligase_path)[0])
-                e3_lig_name = basename(splitext(e3_lig_path)[0])
-                selection_name = '%s_pocket_%d' % (e3_name, self.select_pocket_e3)
-                e3_ligase_path_s = './data/PROTAC/selected_e3/' + selection_name + '.mol2'
-                if not isfile(e3_ligase_path_s):
-                    print("Selecting residues within %d of e3 ligand" % self.select_pocket_e3)
-                    cmd.load(e3_ligase_path, format='pdb')
-                    cmd.load(e3_lig_path, format='mol2')
+                if cmd is not None:
+                    e3_name = basename(splitext(e3_ligase_path)[0])
+                    e3_lig_name = basename(splitext(e3_lig_path)[0])
+                    selection_name = '%s_pocket_%d' % (e3_name, self.select_pocket_e3)
+                    e3_ligase_path_s = './data/PROTAC/selected_e3/' + selection_name + '.mol2'
+                    if not isfile(e3_ligase_path_s):
+                        print("Selecting residues within %d of e3 ligand" % self.select_pocket_e3)
+                        cmd.load(e3_ligase_path, format='pdb')
+                        cmd.load(e3_lig_path, format='mol2')
 
-                    cmd.select(name=selection_name,
-                               selection='(not %s) & br. all within %d of %s'
-                                         % (e3_lig_name, self.select_pocket_e3, e3_lig_name))
-                    cmd.save(e3_ligase_path_s, selection_name)
-                    cmd.delete('all')
-                e3_ligase_path = e3_ligase_path_s
+                        cmd.select(name=selection_name,
+                                   selection='(not %s) & br. all within %d of %s'
+                                             % (e3_lig_name, self.select_pocket_e3, e3_lig_name))
+                        cmd.save(e3_ligase_path_s, selection_name)
+                        cmd.delete('all')
+                    e3_ligase_path = e3_ligase_path_s
+                else:
+                    # Fallback: convert full ligase pocket pdb to mol2 when PyMOL is unavailable.
+                    e3_ligase_path = pdb_to_mol2(e3_ligase_path)
                 e3_path_d[key] = e3_ligase_path
         print('Pocket selection finished!')
 

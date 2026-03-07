@@ -8,7 +8,6 @@ import logging
 import json
 from pathlib import  Path
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
 from protacloader import PROTACSet, collater
 from model import GraphConv, ProtacModel, SageConv, GATTConv, EGNNConv
 from train_and_test import train, valids
@@ -104,7 +103,7 @@ def main():
         args.hidden_size,
     )
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    writer = SummaryWriter(f'runs/{TRAIN_NAME}')
+    writer = None
 
     if args.mode == 'Train':
         model = train(
