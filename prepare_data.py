@@ -377,7 +377,7 @@ class GraphData(InMemoryDataset):
                     tar_name = basename(splitext(tar_path)[0])
                     war_name = basename(splitext(war_path)[0])
                     selection_name = '%s_pocket_%d' % (tar_name, self.select_pocket_war)
-                    tar_path_s = './data/PROTAC/selected_target/' + selection_name + '.mol2'
+                    tar_path_s = os.path.join(self.root, 'selected_target', selection_name + '.mol2')
                     if not isfile(tar_path_s):
                         print("Selecting residues within %d of warhead" % self.select_pocket_war)
                         cmd.load(tar_path, format='pdb')
@@ -397,7 +397,7 @@ class GraphData(InMemoryDataset):
                     e3_name = basename(splitext(e3_ligase_path)[0])
                     e3_lig_name = basename(splitext(e3_lig_path)[0])
                     selection_name = '%s_pocket_%d' % (e3_name, self.select_pocket_e3)
-                    e3_ligase_path_s = './data/PROTAC/selected_e3/' + selection_name + '.mol2'
+                    e3_ligase_path_s = os.path.join(self.root, 'selected_e3', selection_name + '.mol2')
                     if not isfile(e3_ligase_path_s):
                         print("Selecting residues within %d of e3 ligand" % self.select_pocket_e3)
                         cmd.load(e3_ligase_path, format='pdb')
@@ -470,22 +470,48 @@ class GraphData(InMemoryDataset):
         print('target_pocket processed!')
 
         features = []
-        with open('./data/PROTAC/features/protac_feature.npy', 'rb') as f:
+        with open(os.path.join(self.root, 'features', 'protac_feature.npy'), 'rb') as f:
             protac_feature = np.load(f, allow_pickle=True)
 
-        with open('./data/PROTAC/features/target_feature.npy', 'rb') as f:
+        with open(os.path.join(self.root, 'features', 'target_feature.npy'), 'rb') as f:
             target_feature = np.load(f, allow_pickle=True)
 
-        with open('./data/PROTAC/features/e3_feature.npy', 'rb') as f:
+        with open(os.path.join(self.root, 'features', 'e3_feature.npy'), 'rb') as f:
             e3_feature = np.load(f, allow_pickle=True)
 
         feature = np.concatenate((protac_feature, target_feature, e3_feature), axis=1)
+
+        # Align features to current key list (important for filtered regression datasets).
+        index_list = []
+        for key in key_list:
+            try:
+                idx = int(key)
+            except ValueError:
+                raise ValueError(f"Non-integer sample key '{key}' cannot be aligned to feature arrays")
+            if idx < 0 or idx >= feature.shape[0]:
+                raise IndexError(f"Sample key '{key}' maps to index {idx}, out of range for feature shape {feature.shape}")
+            index_list.append(idx)
+        feature = feature[index_list]
+
         torch.save(feature, self.processed_paths[3])
         print('Features processed!')
 
         labels = []
-        for key in key_list:
-            labels.append(name_dic[key]['label'])
+        has_regression_targets = all(
+            ('dc50_nm' in name_dic[key]) and ('dmax_pct' in name_dic[key])
+            for key in key_list
+        )
+
+        if has_regression_targets:
+            for key in key_list:
+                dc50 = name_dic[key].get('dc50_nm')
+                dmax = name_dic[key].get('dmax_pct')
+                labels.append([float(dc50), float(dmax)])
+            labels = np.asarray(labels, dtype=np.float32)
+        else:
+            for key in key_list:
+                labels.append(name_dic[key]['label'])
+
         torch.save(labels, self.processed_paths[4])
         print('Labels processed!')
 

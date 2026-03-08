@@ -12,3 +12,8 @@ data/_downloads/
 __pycache__/
 config/__pycache__/
 DEGRADEMASTER_FT_WORKING_GUIDE_COMPACT.md
+data/PROTAC_regression/
+checkpoint_regression/
+
+explanation.md
+regressiondocs/

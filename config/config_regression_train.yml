@@ -1,0 +1,55 @@
+# regression training config (DC50 + Dmax)
+hidden_size: 100
+mode: Train
+
+# choose: base | two_head | pdc50_bounded | cross_attention | tabular
+regression_variant: base
+
+conv_name: EGNN
+lr: 0.0002
+weight_decay: 0.00001
+epoch: 200
+train_rate: 0.8
+batch_size: 32
+n_layers: 1
+
+select_pocket_war: 10
+select_pocket_e3: 10
+e3_dim: 30
+tar_dim: 30
+protac_dim: 167
+attention: False
+
+dropout: 0.1
+num_attn_heads: 4
+dmax_upper: 100.0
+
+seed: 111
+feature: True
+num_workers: 0
+
+# regression dataset (separate from classification)
+dataset_root: data/PROTAC_regression
+dataset_type: name_regression_trainable
+
+# used for base/two_head/cross_attention and tabular-transform mode
+log_dc50_target: True
+normalize_targets: True
+
+# scheduler / logging
+lr_patience: 20
+log_every: 10
+
+# tabular settings (used when regression_variant=tabular)
+tabular_backend: hist_gb
+tabular_learning_rate: 0.05
+tabular_max_depth: 6
+tabular_max_iter: 500
+tabular_n_estimators: 500
+tabular_n_jobs: -1
+
+# artifacts
+save_dir: checkpoint_regression
+run_name: egnn_dc50_dmax
+checkpoint_path: ""
+save_predictions: True
