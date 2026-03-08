@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+import re
 import os
 import shutil
 import tarfile
@@ -9,6 +11,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import requests
+import pandas as pd
 
 
 class DataPipeline:
@@ -190,6 +193,182 @@ class DataPipeline:
         cls.validate_project_layout(target_root, check_metadata=check_metadata)
         print(f"[done] Dataset prepared at: {target_root}")
         return target_root
+
+
+
+class RegressionPipeline:
+    """
+    Classmethod-based utilities for regression data exploration/preparation.
+
+    This class does not require instantiation; all methods are classmethods
+    to support notebook/script usage for preprocessing pipelines.
+    """
+
+    # 1) Empty class-level distribution store (populated by inspect_label_distribution).
+    label_distribution = {}
+    cleaned_distribution = {}
+    alignment_report = {}
+
+    _numeric_pattern = re.compile(r"^\s*-?\d+(?:\.\d+)?\s*$")
+
+    @staticmethod
+    def _strict_numeric_or_none(value):
+        if pd.isna(value):
+            return None
+        text = str(value).strip().replace(',', '')
+        if text == '' or text.lower() in {'n.d.', 'nd', 'nan', 'none', 'n/a'}:
+            return None
+        if RegressionPipeline._numeric_pattern.fullmatch(text):
+            return float(text)
+        return None
+
+    @staticmethod
+    def _target_from_tar_path(tar_path: str) -> str:
+        tar_path = str(tar_path or '')
+        return tar_path.split('_')[0] if '_' in tar_path else tar_path.replace('.pdb', '')
+
+    @staticmethod
+    def _e3_from_path(e3_path: str) -> str:
+        e3_path = str(e3_path or '')
+        return e3_path.split('_')[0] if '_' in e3_path else e3_path.replace('.pdb', '')
+
+    # 4) Check label distribution, print it, and update class variable.
+    @classmethod
+    def inspect_label_distribution(cls, name_json_path: str | Path):
+        name_json_path = Path(name_json_path)
+        with open(name_json_path, 'r') as f:
+            data = json.load(f)
+
+        labels = [meta.get('label') for meta in data.values()]
+        s = pd.Series(labels, dtype='object')
+        dist = s.value_counts(dropna=False).to_dict()
+
+        cls.label_distribution = {str(k): int(v) for k, v in dist.items()}
+        print(f'[regression] Label distribution from {name_json_path}: {cls.label_distribution}')
+        return cls.label_distribution
+
+    # 5) Load protac.csv into DataFrame.
+    @classmethod
+    def load_protac_csv(cls, protac_csv_path: str | Path) -> pd.DataFrame:
+        protac_csv_path = Path(protac_csv_path)
+        df = pd.read_csv(protac_csv_path, low_memory=False)
+        print(f'[regression] Loaded CSV: {protac_csv_path} | shape={df.shape}')
+        return df
+
+    # 6) Keep only rows where DC50 and Dmax are both strictly numeric.
+    @classmethod
+    def clean_regression_dataframe(
+        cls,
+        df: pd.DataFrame,
+        dc50_col: str = 'DC50 (nM)',
+        dmax_col: str = 'Dmax (%)',
+    ) -> pd.DataFrame:
+        required = ['Compound ID', 'Target', 'E3 ligase', 'Smiles', dc50_col, dmax_col]
+        missing = [c for c in required if c not in df.columns]
+        if missing:
+            raise KeyError(f'Missing required columns in CSV: {missing}')
+
+        work = df.copy()
+        work['dc50_nm'] = work[dc50_col].apply(cls._strict_numeric_or_none)
+        work['dmax_pct'] = work[dmax_col].apply(cls._strict_numeric_or_none)
+
+        cleaned = work[work['dc50_nm'].notna() & work['dmax_pct'].notna()].copy()
+        cleaned['compound_id'] = cleaned['Compound ID'].astype(str).str.strip()
+        cleaned['target'] = cleaned['Target'].astype(str).str.strip()
+        cleaned['e3_ligase'] = cleaned['E3 ligase'].astype(str).str.strip()
+
+        # Aggregate duplicate assay rows by median so each key has a single numeric target pair.
+        grouped = (
+            cleaned
+            .groupby(['compound_id', 'target', 'e3_ligase'], as_index=False)
+            .agg(
+                dc50_nm=('dc50_nm', 'median'),
+                dmax_pct=('dmax_pct', 'median'),
+                source_row_count=('dc50_nm', 'size'),
+                smiles=('Smiles', 'first'),
+            )
+        )
+
+        cls.cleaned_distribution = {
+            'raw_rows': int(len(df)),
+            'strict_numeric_rows': int(len(cleaned)),
+            'unique_key_rows': int(len(grouped)),
+        }
+        print(f"[regression] Cleaned distribution: {cls.cleaned_distribution}")
+        return grouped
+
+    # 7) Explicitly align cleaned regression rows to name.json to avoid index mismatches.
+    @classmethod
+    def align_with_name_json(
+        cls,
+        cleaned_df: pd.DataFrame,
+        name_json_path: str | Path,
+    ) -> pd.DataFrame:
+        name_json_path = Path(name_json_path)
+        with open(name_json_path, 'r') as f:
+            data = json.load(f)
+
+        rows = []
+        for sample_id, meta in data.items():
+            rows.append({
+                'sample_id': sample_id,
+                'compound_id': str(meta.get('pro_comp_id', '')).strip(),
+                'target': cls._target_from_tar_path(meta.get('tar_path', '')),
+                'e3_ligase': cls._e3_from_path(meta.get('e3_ligase_path', '')),
+                'label': meta.get('label'),
+            })
+
+        name_df = pd.DataFrame(rows)
+        merged = name_df.merge(
+            cleaned_df,
+            how='left',
+            on=['compound_id', 'target', 'e3_ligase'],
+            validate='m:1',
+        )
+        merged['has_regression_target'] = merged['dc50_nm'].notna() & merged['dmax_pct'].notna()
+
+        cls.alignment_report = {
+            'name_json_rows': int(len(name_df)),
+            'aligned_with_regression_targets': int(merged['has_regression_target'].sum()),
+            'without_regression_targets': int((~merged['has_regression_target']).sum()),
+        }
+        print(f'[regression] Alignment report: {cls.alignment_report}')
+        return merged
+
+    # 3) Build candidate updated name-json dict including dc50/dmax fields.
+    @classmethod
+    def build_regression_name_dict(
+        cls,
+        aligned_df: pd.DataFrame,
+        original_name_json_path: str | Path,
+    ) -> dict:
+        original_name_json_path = Path(original_name_json_path)
+        with open(original_name_json_path, 'r') as f:
+            original = json.load(f)
+
+        out = {}
+        for _, row in aligned_df.iterrows():
+            sid = str(row['sample_id'])
+            rec = dict(original[sid])
+            rec['dc50_nm'] = None if pd.isna(row.get('dc50_nm')) else float(row['dc50_nm'])
+            rec['dmax_pct'] = None if pd.isna(row.get('dmax_pct')) else float(row['dmax_pct'])
+            rec['has_regression_target'] = bool(row.get('has_regression_target', False))
+            out[sid] = rec
+
+        return out
+
+    @classmethod
+    def write_regression_name_json(
+        cls,
+        regression_name_dict: dict,
+        output_path: str | Path,
+    ) -> Path:
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_path, 'w') as f:
+            json.dump(regression_name_dict, f, indent=2)
+        print(f'[regression] Saved regression-aware name json: {output_path}')
+        return output_path
 
 
 def parse_args() -> argparse.Namespace:
